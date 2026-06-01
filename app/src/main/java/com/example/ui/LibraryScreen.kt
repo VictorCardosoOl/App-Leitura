@@ -47,8 +47,8 @@ fun LibraryScreen(
     onNavigateToExplore: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
-    val books by viewModel.library.collectAsState()
-    val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    val books = uiState.books
 
     Scaffold(
         topBar = {
@@ -173,50 +173,7 @@ fun LibraryScreen(
                 }
             }
 
-            // Quick Settings Section
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.background,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("CONFIGURAÇÕES RÁPIDAS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                    
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Modo de Exibição", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Vertical (Scroll)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surface) {
-                            Row(modifier = Modifier.padding(4.dp)) {
-                                Box(modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(100.dp)), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.SwapVert, contentDescription = "Vertical", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
-                                }
-                                Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.SwapHoriz, contentDescription = "Horizontal", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Modo Noturno", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Amoled Black", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = isDarkMode == true,
-                            onCheckedChange = { viewModel.toggleDarkMode(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        )
-                    }
-                }
-            }
+            // Quick Settings Section Removed for cleaner UI
 
             // Library Section
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
