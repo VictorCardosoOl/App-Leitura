@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         val bookRepo = BookRepository(database.bookDao())
         val settingsRepo = SettingsRepository(applicationContext)
 
-        val factory = ReaderViewModelFactory(bookRepo, settingsRepo)
+        val factory = ReaderViewModelFactory(application, bookRepo, settingsRepo)
         val viewModel = ViewModelProvider(this, factory)[ReaderViewModel::class.java]
 
         setContent {

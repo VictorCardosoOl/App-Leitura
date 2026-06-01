@@ -1,5 +1,9 @@
 package com.example.ui
 
+import android.app.Application
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -12,11 +16,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.example.data.reader.PdfReaderUseCase
 
 class ReaderViewModel(
+    application: Application,
     private val bookRepository: BookRepository,
     private val settingsRepository: SettingsRepository
-) : ViewModel() {
+) : AndroidViewModel(application) {
+
+    val pdfReaderUseCase = PdfReaderUseCase(application)
+    
+    // UI State for Reader
+    private val _pageCount = MutableStateFlow(0)
+    val pageCount: StateFlow<Int> = _pageCount
+
+    private val _currentPageImage = MutableStateFlow<Bitmap?>(null)
+    val currentPageImage: StateFlow<Bitmap?> = _currentPageImage
 
     val isDarkMode: StateFlow<Boolean?> = settingsRepository.isDarkModeFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
@@ -53,6 +68,25 @@ class ReaderViewModel(
         }
     }
 
+    // PDF Functions
+    fun openPdf(uri: Uri) {
+        viewModelScope.launch {
+            val count = pdfReaderUseCase.openPdf(uri)
+            _pageCount.value = count
+        }
+    }
+
+    fun loadPdfPage(pageIndex: Int) {
+        viewModelScope.launch {
+            _currentPageImage.value = pdfReaderUseCase.getPage(pageIndex)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        pdfReaderUseCase.close()
+    }
+
     fun insertBook(uri: android.net.Uri, title: String) {
         viewModelScope.launch {
             val extension = uri.toString().substringAfterLast('.', "").uppercase()
@@ -77,13 +111,14 @@ class ReaderViewModel(
 }
 
 class ReaderViewModelFactory(
+    private val application: Application,
     private val bookRepo: BookRepository,
     private val settingsRepo: SettingsRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ReaderViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return ReaderViewModel(bookRepo, settingsRepo) as T
+            return ReaderViewModel(application, bookRepo, settingsRepo) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
