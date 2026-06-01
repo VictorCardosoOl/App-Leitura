@@ -50,11 +50,27 @@ fun ReaderScreen(
     viewModel: ReaderViewModel,
     onBack: () -> Unit
 ) {
-    val view = LocalView.current
-    val window = (view.context as? Activity)?.window
-
     val bookFlow = remember(bookId) { viewModel.getBook(bookId) }
     val book by bookFlow.collectAsState()
+
+    if (book == null) {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+    } else {
+        ReaderScreenContent(safeBook = book!!, viewModel = viewModel, onBack = onBack)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun ReaderScreenContent(
+    safeBook: BookEntity,
+    viewModel: ReaderViewModel,
+    onBack: () -> Unit
+) {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
 
     val uiState by viewModel.uiState.collectAsState()
     val isRtl = uiState.isRtl
@@ -64,15 +80,6 @@ fun ReaderScreen(
     var isUiVisible by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
     
-    if (book == null) {
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        }
-        return
-    }
-    
-    val safeBook = book!!
-
     var pdfCache by remember { mutableStateOf<PdfPageCache?>(null) }
     var actualPageCount by remember { mutableStateOf(10) }
     
@@ -106,7 +113,7 @@ fun ReaderScreen(
         snapshotFlow { 
             if (isHorizontal) pagerState.currentPage else listState.firstVisibleItemIndex 
         }.collect { page ->
-            viewModel.updateProgress(bookId, page.toFloat() / (pageCount - 1).coerceAtLeast(1))
+            viewModel.updateProgress(safeBook.id, page.toFloat() / (pageCount - 1).coerceAtLeast(1))
         }
     }
 
