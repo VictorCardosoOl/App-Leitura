@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.data.BookEntity
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.snapshotFlow
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -36,13 +38,36 @@ fun ReaderScreen(
     viewModel: ReaderViewModel,
     onBack: () -> Unit
 ) {
-    val book by viewModel.getBook(bookId).collectAsState()
+    val bookFlow = remember(bookId) { viewModel.getBook(bookId) }
+    val book by bookFlow.collectAsState()
     var isHorizontal by remember { mutableStateOf(false) }
     var isUiVisible by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
     
     // Fake pages
     val pageCount = 10 
+
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = ((book?.progress ?: 0f) * pageCount).toInt().coerceIn(0, pageCount - 1)
+    )
+    val pagerState = rememberPagerState(
+        initialPage = ((book?.progress ?: 0f) * pageCount).toInt().coerceIn(0, pageCount - 1),
+        pageCount = { pageCount }
+    )
+    
+    val currentPage by remember(isHorizontal) {
+        derivedStateOf {
+            if (isHorizontal) pagerState.currentPage else listState.firstVisibleItemIndex
+        }
+    }
+
+    LaunchedEffect(listState, pagerState, isHorizontal) {
+        snapshotFlow { 
+            if (isHorizontal) pagerState.currentPage else listState.firstVisibleItemIndex 
+        }.collect { page ->
+            viewModel.updateProgress(bookId, page.toFloat() / (pageCount - 1).coerceAtLeast(1))
+        }
+    }
 
     if (book == null) {
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
@@ -113,6 +138,47 @@ fun ReaderScreen(
                 )
             }
         },
+        bottomBar = {
+            AnimatedVisibility(
+                visible = isUiVisible,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it })
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Página ${currentPage + 1} de $pageCount",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Slider(
+                            value = currentPage.toFloat(),
+                            onValueChange = { newValue ->
+                                scope.launch {
+                                    if (isHorizontal) {
+                                        pagerState.scrollToPage(newValue.toInt())
+                                    } else {
+                                        listState.scrollToItem(newValue.toInt())
+                                    }
+                                }
+                            },
+                            valueRange = 0f..(pageCount - 1).toFloat(),
+                            steps = pageCount - 2,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Box(
@@ -123,39 +189,27 @@ fun ReaderScreen(
         ) {
             if (isHorizontal) {
                 // Horizontal Reading
-                val pagerState = rememberPagerState(
-                    initialPage = (safeBook.progress * pageCount).toInt().coerceIn(0, pageCount - 1),
-                    pageCount = { pageCount }
-                )
-                
-                LaunchedEffect(pagerState.currentPage) {
-                    viewModel.updateProgress(bookId, pagerState.currentPage.toFloat() / (pageCount - 1))
-                }
-
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize().clickable(
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    Box(modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
-                    ) { isUiVisible = !isUiVisible }
-                ) { page ->
-                    ReaderPageContent(type = safeBook.type, page = page)
-                }
-            } else {
-                // Vertical Reading
-                LazyColumn(modifier = Modifier.fillMaxSize().clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { isUiVisible = !isUiVisible }) {
-                    items(pageCount) { page ->
+                    ) { isUiVisible = !isUiVisible }) {
                         ReaderPageContent(type = safeBook.type, page = page)
                     }
                 }
-                
-                // Track progress generically for vertical (mock implementation)
-                DisposableEffect(Unit) {
-                    onDispose {
-                        viewModel.updateProgress(bookId, 0.5f) // Mock saving progress on leave
+            } else {
+                // Vertical Reading
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    items(pageCount) { page ->
+                        Box(modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { isUiVisible = !isUiVisible }) {
+                            ReaderPageContent(type = safeBook.type, page = page)
+                        }
                     }
                 }
             }

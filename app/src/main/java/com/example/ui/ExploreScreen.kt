@@ -1,6 +1,8 @@
 package com.example.ui
 
+import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -20,9 +22,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+fun getFileName(context: Context, uri: Uri): String {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index != -1) {
+                        result = cursor.getString(index)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/') ?: -1
+        if (cut != -1) {
+            result = result?.substring(cut + 1)
+        }
+    }
+    return result ?: "Documento Indefinido"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +61,7 @@ fun ExploreScreen(
     onNavigateToSettings: () -> Unit
 ) {
     var importedFiles by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val context = LocalContext.current
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -152,7 +182,10 @@ fun ExploreScreen(
 
             if (importedFiles.isNotEmpty()) {
                 Text("ARQUIVOS ENCONTRADOS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(importedFiles) { uri ->
                         Surface(
                             shape = RoundedCornerShape(16.dp),
@@ -169,8 +202,7 @@ fun ExploreScreen(
                                     Icon(Icons.AutoMirrored.Filled.InsertDriveFile, contentDescription = "File", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    // Normally we would query the ContentResolver for the real filename
-                                    val fileName = uri.lastPathSegment ?: "Documento"
+                                    val fileName = getFileName(context, uri)
                                     Text(fileName, maxLines = 1, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                                     Text("Pendente de Inclusão", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -179,7 +211,7 @@ fun ExploreScreen(
                                     contentDescription = "Add to Library", 
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.clickable {
-                                        val fileName = uri.lastPathSegment ?: "Documento"
+                                        val fileName = getFileName(context, uri)
                                         viewModel.insertBook(uri, fileName)
                                         importedFiles = importedFiles.filter { it != uri }
                                     }
