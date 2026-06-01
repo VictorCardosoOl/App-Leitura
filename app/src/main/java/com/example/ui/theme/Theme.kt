@@ -1,0 +1,57 @@
+package com.example.ui.theme
+
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+
+private val DarkColorScheme =
+  darkColorScheme(
+    primary = PrimaryPurple,
+    onPrimary = OnPrimaryPurple,
+    background = BackgroundDark,
+    onBackground = TextPrimaryDark,
+    surface = SurfaceDark,
+    onSurface = TextPrimaryDark,
+    surfaceVariant = SurfaceDark,
+    onSurfaceVariant = TextSecondaryDark,
+    outline = SurfaceVariantDark,
+    secondaryContainer = SurfaceAccentDark,
+    onSecondaryContainer = OnSurfaceAccentDark
+  )
+
+private val LightColorScheme =
+  lightColorScheme(
+    primary = PrimaryPurpleLight,
+    onPrimary = OnPrimaryPurpleLight,
+    background = BackgroundLight,
+    onBackground = TextPrimaryLight,
+    surface = SurfaceLight,
+    onSurface = TextPrimaryLight,
+    surfaceVariant = SurfaceLight,
+    onSurfaceVariant = TextSecondaryLight,
+    outline = SurfaceVariantLight,
+    secondaryContainer = SurfaceAccentLight,
+    onSecondaryContainer = OnSurfaceAccentLight
+  )
+
+@Composable
+fun OmniReaderTheme(
+  darkTheme: Boolean = isSystemInDarkTheme(),
+  // Dynamic color is available on Android 12+
+  dynamicColor: Boolean = false, // Disable dynamic colors to enforce the theme
+  content: @Composable () -> Unit,
+) {
+  val colorScheme =
+    when {
+      darkTheme -> DarkColorScheme
+      else -> LightColorScheme
+    }
+
+  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+}

@@ -1,0 +1,6 @@
+{
+  "name": "OmniReader",
+  "description": "A universal reader for comics, EPUBs, and PDFs with cloud sync and night mode support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
