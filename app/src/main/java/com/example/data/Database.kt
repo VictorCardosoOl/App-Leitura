@@ -9,6 +9,7 @@ data class BookEntity(
     val title: String,
     val type: String, // "COMIC", "EPUB", "PDF"
     val coverUrl: String,
+    val filePath: String, // Add filePath
     val isSynced: Boolean = false,
     val progress: Float = 0f, // 0.0 to 1.0
     val lastRead: Long = System.currentTimeMillis()
@@ -35,7 +36,7 @@ interface BookDao {
     suspend fun deleteBookById(id: Int)
 }
 
-@Database(entities = [BookEntity::class], version = 1, exportSchema = false)
+@Database(entities = [BookEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
 }

@@ -212,6 +212,14 @@ fun ExploreScreen(
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.clickable {
                                         val fileName = getFileName(context, uri)
+                                        try {
+                                            context.contentResolver.takePersistableUriPermission(
+                                                uri,
+                                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                            )
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
                                         viewModel.insertBook(uri, fileName)
                                         importedFiles = importedFiles.filter { it != uri }
                                     }

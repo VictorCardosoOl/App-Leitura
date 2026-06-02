@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +32,17 @@ import com.example.data.BookEntity
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.snapshotFlow
 
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import android.app.Activity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ReaderScreen(
@@ -40,18 +52,54 @@ fun ReaderScreen(
 ) {
     val bookFlow = remember(bookId) { viewModel.getBook(bookId) }
     val book by bookFlow.collectAsState()
-    var isHorizontal by remember { mutableStateOf(false) }
+
+    if (book == null) {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+    } else {
+        ReaderScreenContent(safeBook = book!!, viewModel = viewModel, onBack = onBack)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun ReaderScreenContent(
+    safeBook: BookEntity,
+    viewModel: ReaderViewModel,
+    onBack: () -> Unit
+) {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    val uiState by viewModel.uiState.collectAsState()
+    val isRtl = uiState.isRtl
+    val isScrollMode = uiState.isScrollMode
+    val isHorizontal = !isScrollMode
+
     var isUiVisible by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
     
-    // Fake pages
-    val pageCount = 10 
+    var pdfCache by remember { mutableStateOf<PdfPageCache?>(null) }
+    var actualPageCount by remember { mutableStateOf(10) }
+    
+    if (safeBook.type == "PDF" && safeBook.filePath.isNotEmpty()) {
+        val uri = android.net.Uri.parse(safeBook.filePath)
+        val combinedState = rememberPdfState(uri)
+        pdfCache = combinedState.second
+        if ((combinedState.first?.pageCount ?: 0) > 0) {
+            actualPageCount = combinedState.first!!.pageCount
+        }
+    }
+
+    val pageCount = actualPageCount 
+    var isEyeProtectionEnabled by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = ((book?.progress ?: 0f) * pageCount).toInt().coerceIn(0, pageCount - 1)
+        initialFirstVisibleItemIndex = ((safeBook.progress) * pageCount).toInt().coerceIn(0, pageCount - 1)
     )
     val pagerState = rememberPagerState(
-        initialPage = ((book?.progress ?: 0f) * pageCount).toInt().coerceIn(0, pageCount - 1),
+        initialPage = ((safeBook.progress) * pageCount).toInt().coerceIn(0, pageCount - 1),
         pageCount = { pageCount }
     )
     
@@ -65,18 +113,21 @@ fun ReaderScreen(
         snapshotFlow { 
             if (isHorizontal) pagerState.currentPage else listState.firstVisibleItemIndex 
         }.collect { page ->
-            viewModel.updateProgress(bookId, page.toFloat() / (pageCount - 1).coerceAtLeast(1))
+            viewModel.updateProgress(safeBook.id, page.toFloat() / (pageCount - 1).coerceAtLeast(1))
         }
     }
 
-    if (book == null) {
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+    LaunchedEffect(isUiVisible) {
+        window?.let { win ->
+            val insetsController = WindowCompat.getInsetsController(win, view)
+            if (isUiVisible) {
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            } else {
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
         }
-        return
     }
-    
-    val safeBook = book!!
 
     Scaffold(
         topBar = {
@@ -101,7 +152,21 @@ fun ReaderScreen(
                         ) {
                             Row(modifier = Modifier.padding(4.dp)) {
                                 IconButton(
-                                    onClick = { isHorizontal = false },
+                                    onClick = { isEyeProtectionEnabled = !isEyeProtectionEnabled },
+                                    modifier = Modifier.size(36.dp).background(
+                                        color = if (isEyeProtectionEnabled) Color(0xFFFFAA00).copy(alpha = 0.2f) else Color.Transparent,
+                                        shape = RoundedCornerShape(100.dp)
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Visibility,
+                                        contentDescription = "Proteção Ocular",
+                                        tint = if (isEyeProtectionEnabled) Color(0xFFFFAA00) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { viewModel.toggleScrollMode(true) },
                                     modifier = Modifier.size(36.dp).background(
                                         color = if (!isHorizontal) MaterialTheme.colorScheme.primary else Color.Transparent,
                                         shape = RoundedCornerShape(100.dp)
@@ -115,7 +180,7 @@ fun ReaderScreen(
                                     )
                                 }
                                 IconButton(
-                                    onClick = { isHorizontal = true },
+                                    onClick = { viewModel.toggleScrollMode(false) },
                                     modifier = Modifier.size(36.dp).background(
                                         color = if (isHorizontal) MaterialTheme.colorScheme.primary else Color.Transparent,
                                         shape = RoundedCornerShape(100.dp)
@@ -173,7 +238,7 @@ fun ReaderScreen(
                             },
                             valueRange = 0f..(pageCount - 1).toFloat(),
                             steps = pageCount - 2,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Ajustar progresso da leitura" }
                         )
                     }
                 }
@@ -191,13 +256,14 @@ fun ReaderScreen(
                 // Horizontal Reading
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    reverseLayout = isRtl
                 ) { page ->
                     Box(modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) { isUiVisible = !isUiVisible }) {
-                        ReaderPageContent(type = safeBook.type, page = page)
+                        ReaderPageContent(type = safeBook.type, page = page, pdfCache = pdfCache)
                     }
                 }
             } else {
@@ -208,17 +274,27 @@ fun ReaderScreen(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) { isUiVisible = !isUiVisible }) {
-                            ReaderPageContent(type = safeBook.type, page = page)
+                            ReaderPageContent(type = safeBook.type, page = page, pdfCache = pdfCache)
                         }
                     }
                 }
+            }
+            
+            if (isEyeProtectionEnabled) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFFFFAA00).copy(alpha = 0.2f))
+                        // Clickable intercept to pass down gestures while overlaying color isn't perfectly transparent to touches if we don't pass them, 
+                        // actually just use pointerInput to let touches pass through or don't set clickable. Background alone doesn't consume clicks.
+                )
             }
         }
     }
 }
 
 @Composable
-fun ReaderPageContent(type: String, page: Int) {
+fun ReaderPageContent(type: String, page: Int, pdfCache: PdfPageCache? = null) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -226,7 +302,9 @@ fun ReaderPageContent(type: String, page: Int) {
             .background(Color.White),
         contentAlignment = Alignment.Center
     ) {
-        if (type == "COMIC" || type == "PDF") {
+        if (type == "PDF" && pdfCache != null) {
+            PdfPageImage(pdfCache = pdfCache, page = page)
+        } else if (type == "COMIC" || type == "PDF") {
             // Mock comic/pdf page image
             val url = "https://images.unsplash.com/photo-1578301978018-3005759f48f7?auto=format&fit=crop&w=600&q=80&text=Page+${page + 1}"
             AsyncImage(
@@ -243,6 +321,57 @@ fun ReaderPageContent(type: String, page: Int) {
                 modifier = Modifier.padding(32.dp),
                 textAlign = TextAlign.Justify
             )
+        }
+    }
+}
+
+@Composable
+fun PdfPageImage(pdfCache: PdfPageCache, page: Int) {
+    val context = LocalView.current.context
+    val density = LocalView.current.resources.displayMetrics.density
+    
+    var bitmap by remember(page) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    
+    LaunchedEffect(page) {
+        bitmap = pdfCache.getPageBitmap(page, 0, 0, density)
+    }
+    
+    // Pinch to zoom state
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    
+    val state = androidx.compose.foundation.gestures.rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, 5f)
+        val extraWidth = (scale - 1) * 1000 // Approximate boundaries
+        val extraHeight = (scale - 1) * 1000
+        val maxX = extraWidth / 2
+        val maxY = extraHeight / 2
+        
+        offset = androidx.compose.ui.geometry.Offset(
+            x = (offset.x + panChange.x * scale).coerceIn(-maxX, maxX),
+            y = (offset.y + panChange.y * scale).coerceIn(-maxY, maxY)
+        )
+    }
+
+    if (bitmap != null) {
+        androidx.compose.foundation.Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "PDF Page ${page + 1}",
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .transformable(state)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y
+                ),
+            contentScale = ContentScale.FillWidth
+        )
+    } else {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
         }
     }
 }
