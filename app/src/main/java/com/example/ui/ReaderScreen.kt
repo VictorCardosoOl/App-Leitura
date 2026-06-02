@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.example.data.BookEntity
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.snapshotFlow
@@ -94,7 +96,7 @@ fun ReaderScreenContent(
         val uri = android.net.Uri.parse(safeBook.filePath)
         val context = LocalView.current.context
         LaunchedEffect(uri) {
-            kotlinx.coroutines.Dispatchers.IO.invoke {
+            withContext(Dispatchers.IO) {
                 val count = com.example.utils.DocumentExtractor.getComicPageCount(context, uri)
                 if (count > 0) actualPageCount = count
             }
@@ -103,7 +105,7 @@ fun ReaderScreenContent(
         val uri = android.net.Uri.parse(safeBook.filePath)
         val context = LocalView.current.context
         LaunchedEffect(uri) {
-            kotlinx.coroutines.Dispatchers.IO.invoke {
+            withContext(Dispatchers.IO) {
                 val count = com.example.utils.DocumentExtractor.getEpubChapterCount(context, uri)
                 if (count > 0) actualPageCount = count
             }
@@ -112,6 +114,9 @@ fun ReaderScreenContent(
 
     val pageCount = actualPageCount 
     var isEyeProtectionEnabled by remember { mutableStateOf(false) }
+    var textSize by remember { mutableStateOf(18) }
+    var readerTheme by remember { mutableStateOf("LIGHT") } // "LIGHT", "DARK", "SEPIA"
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = ((safeBook.progress) * pageCount).toInt().coerceIn(0, pageCount - 1)
@@ -198,16 +203,13 @@ fun ReaderScreenContent(
                                     )
                                 }
                                 IconButton(
-                                    onClick = { viewModel.toggleScrollMode(false) },
-                                    modifier = Modifier.size(36.dp).background(
-                                        color = if (isHorizontal) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                        shape = RoundedCornerShape(100.dp)
-                                    )
+                                    onClick = { showSettingsDialog = true },
+                                    modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.SwapHoriz,
-                                        contentDescription = "Horizontal Mode",
-                                        tint = if (isHorizontal) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        imageVector = Icons.Default.SwapHoriz, // using placeholder icon for settings since we don't have Settings imported
+                                        contentDescription = "Configurações",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -281,7 +283,7 @@ fun ReaderScreenContent(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) { isUiVisible = !isUiVisible }) {
-                        ReaderPageContent(type = safeBook.type, filePath = safeBook.filePath, page = page, pdfCache = pdfCache)
+                        ReaderPageContent(type = safeBook.type, filePath = safeBook.filePath, page = page, pdfCache = pdfCache, textSize = textSize, theme = readerTheme)
                     }
                 }
             } else {
@@ -292,7 +294,7 @@ fun ReaderScreenContent(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) { isUiVisible = !isUiVisible }) {
-                            ReaderPageContent(type = safeBook.type, filePath = safeBook.filePath, page = page, pdfCache = pdfCache)
+                            ReaderPageContent(type = safeBook.type, filePath = safeBook.filePath, page = page, pdfCache = pdfCache, textSize = textSize, theme = readerTheme)
                         }
                     }
                 }
@@ -303,8 +305,35 @@ fun ReaderScreenContent(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color(0xFFFFAA00).copy(alpha = 0.2f))
-                        // Clickable intercept to pass down gestures while overlaying color isn't perfectly transparent to touches if we don't pass them, 
-                        // actually just use pointerInput to let touches pass through or don't set clickable. Background alone doesn't consume clicks.
+                )
+            }
+            
+            if (showSettingsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSettingsDialog = false },
+                    title = { Text("Configurações de Leitura") },
+                    text = {
+                        Column {
+                            Text("Tamanho da Fonte: $textSize")
+                            Slider(
+                                value = textSize.toFloat(),
+                                onValueChange = { textSize = it.toInt() },
+                                valueRange = 12f..36f
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text("Tema:")
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                Button(onClick = { readerTheme = "LIGHT" }, colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray, contentColor = Color.Black)) { Text("Claro") }
+                                Button(onClick = { readerTheme = "DARK" }, colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray, contentColor = Color.White)) { Text("Escuro") }
+                                Button(onClick = { readerTheme = "SEPIA" }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4ECD8), contentColor = Color(0xFF5B4636))) { Text("Sépia") }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showSettingsDialog = false }) {
+                            Text("Fechar")
+                        }
+                    }
                 )
             }
         }
@@ -312,7 +341,7 @@ fun ReaderScreenContent(
 }
 
 @Composable
-fun ReaderPageContent(type: String, filePath: String, page: Int, pdfCache: PdfPageCache? = null) {
+fun ReaderPageContent(type: String, filePath: String, page: Int, pdfCache: PdfPageCache? = null, textSize: Int = 18, theme: String = "LIGHT") {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -325,9 +354,8 @@ fun ReaderPageContent(type: String, filePath: String, page: Int, pdfCache: PdfPa
         } else if (type == "COMIC" && filePath.isNotEmpty()) {
             ComicPageImage(uriString = filePath, page = page)
         } else if (type == "EPUB" && filePath.isNotEmpty()) {
-            EpubChapterView(uriString = filePath, chapterIndex = page)
+            EpubChapterView(uriString = filePath, chapterIndex = page, textSize = textSize, theme = theme)
         } else {
-            // Fallback for DOC or missing file
             Text("Conteúdo não disponível para $type", color = Color.Black)
         }
     }
@@ -339,7 +367,7 @@ fun ComicPageImage(uriString: String, page: Int) {
     var bitmap by remember(page) { mutableStateOf<android.graphics.Bitmap?>(null) }
     
     LaunchedEffect(page) {
-        kotlinx.coroutines.Dispatchers.IO.invoke {
+        withContext(Dispatchers.IO) {
             val uri = android.net.Uri.parse(uriString)
             bitmap = com.example.utils.DocumentExtractor.getComicPage(context, uri, page)
         }
@@ -379,18 +407,24 @@ fun ComicPageImage(uriString: String, page: Int) {
 }
 
 @Composable
-fun EpubChapterView(uriString: String, chapterIndex: Int) {
+fun EpubChapterView(uriString: String, chapterIndex: Int, textSize: Int = 18, theme: String = "LIGHT") {
     val context = LocalView.current.context
     var htmlContent by remember(chapterIndex) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(chapterIndex) {
-        kotlinx.coroutines.Dispatchers.IO.invoke {
+        withContext(Dispatchers.IO) {
             val uri = android.net.Uri.parse(uriString)
             htmlContent = com.example.utils.DocumentExtractor.getEpubChapterHtml(context, uri, chapterIndex)
         }
     }
 
     if (htmlContent != null) {
+        val (bgColor, textColor) = when(theme) {
+            "DARK" -> Pair("#121212", "#E0E0E0")
+            "SEPIA" -> Pair("#F4ECD8", "#5B4636")
+            else -> Pair("#FFFFFF", "#333333")
+        }
+
         androidx.compose.ui.viewinterop.AndroidView(
             factory = { ctx ->
                 android.webkit.WebView(ctx).apply {
@@ -399,9 +433,9 @@ fun EpubChapterView(uriString: String, chapterIndex: Int) {
                 }
             },
             update = { webView ->
-                // Basic styling to make it readable
-                val styledHtml = "<html><head><style>body { font-size: 18px; line-height: 1.6; padding: 16px; color: #333; } img { max-width: 100%; height: auto; }</style></head><body>$htmlContent</body></html>"
+                val styledHtml = "<html><head><style>body { background-color: $bgColor; color: $textColor; font-size: ${textSize}px; line-height: 1.6; padding: 16px; margin: 0; } img { max-width: 100%; height: auto; }</style></head><body>$htmlContent</body></html>"
                 webView.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+                webView.setBackgroundColor(android.graphics.Color.parseColor(bgColor))
             },
             modifier = Modifier.fillMaxSize()
         )

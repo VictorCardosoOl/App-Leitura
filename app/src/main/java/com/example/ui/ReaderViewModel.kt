@@ -37,15 +37,7 @@ class ReaderViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppUiState())
 
     init {
-        // Seed some mock data if empty.
-        viewModelScope.launch {
-            val books = bookRepository.allBooks.first()
-            if (books.isEmpty()) {
-                bookRepository.insert(BookEntity(title = "Attack on Titan Vol. 1", type = "COMIC", coverUrl = "https://images.unsplash.com/photo-1612480797665-c96d261ae092?auto=format&fit=crop&q=80&w=400&h=600", filePath = "", isSynced = true))
-                bookRepository.insert(BookEntity(title = "The Great Gatsby", type = "EPUB", coverUrl = "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=400&h=600", filePath = "", isSynced = true, progress = 0.45f))
-                bookRepository.insert(BookEntity(title = "Android Architecture", type = "PDF", coverUrl = "https://images.unsplash.com/photo-1512820200508-8df04dbf5619?auto=format&fit=crop&q=80&w=400&h=600", filePath = "", isSynced = false))
-            }
-        }
+        // Mock data removed. Only user-imported books will be shown.
     }
 
     fun toggleRtlMode(isRtl: Boolean) {

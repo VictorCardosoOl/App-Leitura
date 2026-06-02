@@ -26,7 +26,11 @@ class PdfRendererState(
         
     init {
         try {
-            fileDescriptor = context.contentResolver.openFileDescriptor(uri, "r")
+            fileDescriptor = if (uri.scheme == "file") {
+                ParcelFileDescriptor.open(java.io.File(uri.path!!), ParcelFileDescriptor.MODE_READ_ONLY)
+            } else {
+                context.contentResolver.openFileDescriptor(uri, "r")
+            }
             fileDescriptor?.let {
                 pdfRenderer = PdfRenderer(it)
             }

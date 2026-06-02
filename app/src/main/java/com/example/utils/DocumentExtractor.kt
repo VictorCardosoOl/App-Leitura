@@ -9,11 +9,29 @@ import android.os.ParcelFileDescriptor
 import com.github.junrar.Archive
 import nl.siegmann.epublib.epub.EpubReader
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.*
 
 object DocumentExtractor {
+
+    private fun getInputStream(context: Context, uri: Uri): InputStream? {
+        return if (uri.scheme == "file") {
+            FileInputStream(File(uri.path!!))
+        } else {
+            context.contentResolver.openInputStream(uri)
+        }
+    }
+
+    private fun getFileDescriptor(context: Context, uri: Uri): ParcelFileDescriptor? {
+        return if (uri.scheme == "file") {
+            ParcelFileDescriptor.open(File(uri.path!!), ParcelFileDescriptor.MODE_READ_ONLY)
+        } else {
+            context.contentResolver.openFileDescriptor(uri, "r")
+        }
+    }
 
     fun extractCover(context: Context, uri: Uri, type: String): String? {
         return try {
@@ -41,7 +59,7 @@ object DocumentExtractor {
     }
 
     private fun extractEpubCover(context: Context, uri: Uri): Bitmap? {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
+        getInputStream(context, uri)?.use { stream ->
             val book = EpubReader().readEpub(stream)
             val coverImage = book.coverImage
             if (coverImage != null) {
@@ -52,7 +70,7 @@ object DocumentExtractor {
     }
 
     private fun extractPdfCover(context: Context, uri: Uri): Bitmap? {
-        context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+        getFileDescriptor(context, uri)?.use { pfd ->
             val pdfRenderer = PdfRenderer(pfd)
             if (pdfRenderer.pageCount > 0) {
                 val page = pdfRenderer.openPage(0)
@@ -69,7 +87,7 @@ object DocumentExtractor {
     private fun extractComicCover(context: Context, uri: Uri): Bitmap? {
         // Try ZIP (CBZ) first, then RAR (CBR)
         try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            getInputStream(context, uri)?.use { stream ->
                 val zis = ZipInputStream(stream)
                 var entry = zis.nextEntry
                 while (entry != null) {
@@ -85,7 +103,7 @@ object DocumentExtractor {
         
         // If ZIP fails, try RAR
         try {
-            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            val pfd = getFileDescriptor(context, uri)
             if (pfd != null) {
                 val archive = Archive(ParcelFileDescriptor.AutoCloseInputStream(pfd))
                 val fileHeaders = archive.fileHeaders
@@ -114,7 +132,7 @@ object DocumentExtractor {
     // Used for Reading EPUB
     fun getEpubChapterHtml(context: Context, uri: Uri, chapterIndex: Int): String? {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            getInputStream(context, uri)?.use { stream ->
                 val book = EpubReader().readEpub(stream)
                 val spine = book.spine
                 if (chapterIndex >= 0 && chapterIndex < spine.size()) {
@@ -130,7 +148,7 @@ object DocumentExtractor {
     
     fun getEpubChapterCount(context: Context, uri: Uri): Int {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            getInputStream(context, uri)?.use { stream ->
                 val book = EpubReader().readEpub(stream)
                 book.spine.size()
             } ?: 0
@@ -140,10 +158,32 @@ object DocumentExtractor {
     }
 
     // Used for Reading Comics
+    private val comicCache = android.util.LruCache<String, Bitmap>(5) // Cache up to 5 pages
+
     fun getComicPage(context: Context, uri: Uri, pageIndex: Int): Bitmap? {
+        val cacheKey = "${uri.toString()}_$pageIndex"
+        comicCache.get(cacheKey)?.let { return it }
+
+        val bitmap = extractComicPageInternal(context, uri, pageIndex)
+        if (bitmap != null) {
+            comicCache.put(cacheKey, bitmap)
+            // Prefetch next page silently
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val nextKey = "${uri.toString()}_${pageIndex + 1}"
+                if (comicCache.get(nextKey) == null) {
+                    extractComicPageInternal(context, uri, pageIndex + 1)?.let {
+                        comicCache.put(nextKey, it)
+                    }
+                }
+            }
+        }
+        return bitmap
+    }
+
+    private fun extractComicPageInternal(context: Context, uri: Uri, pageIndex: Int): Bitmap? {
         // Zip (CBZ)
         try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            getInputStream(context, uri)?.use { stream ->
                 val zis = ZipInputStream(stream)
                 var entry = zis.nextEntry
                 var currentIndex = 0
@@ -162,7 +202,7 @@ object DocumentExtractor {
         }
         // RAR (CBR)
         try {
-            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            val pfd = getFileDescriptor(context, uri)
             if (pfd != null) {
                 val archive = Archive(ParcelFileDescriptor.AutoCloseInputStream(pfd))
                 val imageHeaders = archive.fileHeaders.filter { !it.isDirectory && isImageFile(it.fileName) }
@@ -184,7 +224,7 @@ object DocumentExtractor {
     fun getComicPageCount(context: Context, uri: Uri): Int {
         var count = 0
         try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            getInputStream(context, uri)?.use { stream ->
                 val zis = ZipInputStream(stream)
                 var entry = zis.nextEntry
                 while (entry != null) {
@@ -197,7 +237,7 @@ object DocumentExtractor {
             e.printStackTrace()
         }
         try {
-            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            val pfd = getFileDescriptor(context, uri)
             if (pfd != null) {
                 val archive = Archive(ParcelFileDescriptor.AutoCloseInputStream(pfd))
                 count = archive.fileHeaders.count { !it.isDirectory && isImageFile(it.fileName) }
