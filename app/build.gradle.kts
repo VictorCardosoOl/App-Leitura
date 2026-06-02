@@ -101,7 +101,9 @@ dependencies {
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
   implementation(libs.junrar)
-  implementation(libs.epublib)
+  implementation(libs.epublib) {
+    exclude(group = "xmlpull", module = "xmlpull")
+  }
   implementation(libs.work.runtime.ktx)
   implementation(libs.firebase.auth)
   implementation(libs.firebase.firestore)
