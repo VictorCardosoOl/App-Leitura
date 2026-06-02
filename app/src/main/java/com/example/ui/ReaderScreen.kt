@@ -90,6 +90,24 @@ fun ReaderScreenContent(
         if ((combinedState.first?.pageCount ?: 0) > 0) {
             actualPageCount = combinedState.first!!.pageCount
         }
+    } else if (safeBook.type == "COMIC" && safeBook.filePath.isNotEmpty()) {
+        val uri = android.net.Uri.parse(safeBook.filePath)
+        val context = LocalView.current.context
+        LaunchedEffect(uri) {
+            kotlinx.coroutines.Dispatchers.IO.invoke {
+                val count = com.example.utils.DocumentExtractor.getComicPageCount(context, uri)
+                if (count > 0) actualPageCount = count
+            }
+        }
+    } else if (safeBook.type == "EPUB" && safeBook.filePath.isNotEmpty()) {
+        val uri = android.net.Uri.parse(safeBook.filePath)
+        val context = LocalView.current.context
+        LaunchedEffect(uri) {
+            kotlinx.coroutines.Dispatchers.IO.invoke {
+                val count = com.example.utils.DocumentExtractor.getEpubChapterCount(context, uri)
+                if (count > 0) actualPageCount = count
+            }
+        }
     }
 
     val pageCount = actualPageCount 
@@ -263,7 +281,7 @@ fun ReaderScreenContent(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) { isUiVisible = !isUiVisible }) {
-                        ReaderPageContent(type = safeBook.type, page = page, pdfCache = pdfCache)
+                        ReaderPageContent(type = safeBook.type, filePath = safeBook.filePath, page = page, pdfCache = pdfCache)
                     }
                 }
             } else {
@@ -274,7 +292,7 @@ fun ReaderScreenContent(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) { isUiVisible = !isUiVisible }) {
-                            ReaderPageContent(type = safeBook.type, page = page, pdfCache = pdfCache)
+                            ReaderPageContent(type = safeBook.type, filePath = safeBook.filePath, page = page, pdfCache = pdfCache)
                         }
                     }
                 }
@@ -294,7 +312,7 @@ fun ReaderScreenContent(
 }
 
 @Composable
-fun ReaderPageContent(type: String, page: Int, pdfCache: PdfPageCache? = null) {
+fun ReaderPageContent(type: String, filePath: String, page: Int, pdfCache: PdfPageCache? = null) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,24 +322,91 @@ fun ReaderPageContent(type: String, page: Int, pdfCache: PdfPageCache? = null) {
     ) {
         if (type == "PDF" && pdfCache != null) {
             PdfPageImage(pdfCache = pdfCache, page = page)
-        } else if (type == "COMIC" || type == "PDF") {
-            // Mock comic/pdf page image
-            val url = "https://images.unsplash.com/photo-1578301978018-3005759f48f7?auto=format&fit=crop&w=600&q=80&text=Page+${page + 1}"
-            AsyncImage(
-                model = url,
-                contentDescription = "Page ${page + 1}",
-                contentScale = ContentScale.FillWidth,
-                modifier = Modifier.fillMaxSize()
-            )
+        } else if (type == "COMIC" && filePath.isNotEmpty()) {
+            ComicPageImage(uriString = filePath, page = page)
+        } else if (type == "EPUB" && filePath.isNotEmpty()) {
+            EpubChapterView(uriString = filePath, chapterIndex = page)
         } else {
-            // Mock EPUB Content
-            Text(
-                text = "EPUB Content Page ${page + 1}\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
-                color = Color.Black,
-                modifier = Modifier.padding(32.dp),
-                textAlign = TextAlign.Justify
-            )
+            // Fallback for DOC or missing file
+            Text("Conteúdo não disponível para $type", color = Color.Black)
         }
+    }
+}
+
+@Composable
+fun ComicPageImage(uriString: String, page: Int) {
+    val context = LocalView.current.context
+    var bitmap by remember(page) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    
+    LaunchedEffect(page) {
+        kotlinx.coroutines.Dispatchers.IO.invoke {
+            val uri = android.net.Uri.parse(uriString)
+            bitmap = com.example.utils.DocumentExtractor.getComicPage(context, uri, page)
+        }
+    }
+
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val state = androidx.compose.foundation.gestures.rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, 5f)
+        val extraWidth = (scale - 1) * 1000
+        val extraHeight = (scale - 1) * 1000
+        offset = androidx.compose.ui.geometry.Offset(
+            x = (offset.x + panChange.x * scale).coerceIn(-extraWidth/2, extraWidth/2),
+            y = (offset.y + panChange.y * scale).coerceIn(-extraHeight/2, extraHeight/2)
+        )
+    }
+
+    if (bitmap != null) {
+        androidx.compose.foundation.Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "Página de Quadrinho ${page + 1}",
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .transformable(state)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y
+                ),
+            contentScale = ContentScale.Fit
+        )
+    } else {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+fun EpubChapterView(uriString: String, chapterIndex: Int) {
+    val context = LocalView.current.context
+    var htmlContent by remember(chapterIndex) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(chapterIndex) {
+        kotlinx.coroutines.Dispatchers.IO.invoke {
+            val uri = android.net.Uri.parse(uriString)
+            htmlContent = com.example.utils.DocumentExtractor.getEpubChapterHtml(context, uri, chapterIndex)
+        }
+    }
+
+    if (htmlContent != null) {
+        androidx.compose.ui.viewinterop.AndroidView(
+            factory = { ctx ->
+                android.webkit.WebView(ctx).apply {
+                    settings.javaScriptEnabled = false
+                    settings.defaultTextEncodingName = "utf-8"
+                }
+            },
+            update = { webView ->
+                // Basic styling to make it readable
+                val styledHtml = "<html><head><style>body { font-size: 18px; line-height: 1.6; padding: 16px; color: #333; } img { max-width: 100%; height: auto; }</style></head><body>$htmlContent</body></html>"
+                webView.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    } else {
+        CircularProgressIndicator()
     }
 }
 

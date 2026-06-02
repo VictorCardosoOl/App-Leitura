@@ -23,7 +23,7 @@ val appModule = module {
     single { BookRepository(get()) }
     single { SettingsRepository(androidContext()) }
     
-    factory { AddDocumentUseCase(get()) }
+    factory { AddDocumentUseCase(get(), androidContext()) }
     
     viewModel { ReaderViewModel(get(), get(), get()) }
 }
